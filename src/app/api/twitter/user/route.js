@@ -10,31 +10,27 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
     }
 
-    // API istemcisini oluştur
-    const client = new TwitterApi({
-      appKey: process.env.TWITTER_CLIENT_ID,
-      appSecret: process.env.TWITTER_CLIENT_SECRET,
-      accessToken: process.env.TWITTER_BEARER_TOKEN,
-    });
+    console.log('Initializing Twitter client...');
+    const client = new TwitterApi(process.env.TWITTER_BEARER_TOKEN);
+    const v2Client = client.v2;
 
-    // Kullanıcı bilgilerini al
-    const user = await client.v2.userByUsername(username);
+    console.log('Fetching user data for:', username);
+    const user = await v2Client.userByUsername(username);
     console.log('User data:', user);
 
     if (!user.data) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Son tweetleri al
-    const tweets = await client.v2.userTimeline(user.data.id, {
+    console.log('Fetching tweets for user ID:', user.data.id);
+    const tweets = await v2Client.userTimeline(user.data.id, {
       max_results: 10,
       'tweet.fields': ['public_metrics', 'created_at'],
     });
-    console.log('Tweets data:', tweets);
 
     const tweetData = tweets.data?.data || [];
+    console.log('Found tweets:', tweetData.length);
     
-    // İstatistikleri hesapla
     const metrics = {
       totalTweets: tweetData.length,
       totalLikes: 0,
@@ -45,7 +41,6 @@ export async function GET(request) {
     let bestTweet = null;
     let bestTweetScore = 0;
 
-    // Tweet'leri analiz et
     tweetData.forEach(tweet => {
       const likes = tweet.public_metrics?.like_count || 0;
       const retweets = tweet.public_metrics?.retweet_count || 0;
@@ -68,14 +63,13 @@ export async function GET(request) {
       }
     });
 
-    // Yanıt oluştur
     const response = {
       username: user.data.username,
       ...metrics,
       bestTweet
     };
 
-    console.log('Response:', response);
+    console.log('Sending response:', response);
     return NextResponse.json(response);
 
   } catch (error) {
@@ -83,6 +77,7 @@ export async function GET(request) {
     return NextResponse.json({ 
       error: 'Failed to fetch Twitter data',
       message: error.message,
+      details: error.data?.errors || [],
       code: error.code
     }, { status: 500 });
   }
