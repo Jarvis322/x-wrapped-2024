@@ -181,7 +181,7 @@ const XWrapped = () => {
                       >
                         <div className="text-2xl mb-2">{stat.icon}</div>
                         <div className="text-xl font-bold text-white">
-                          {typeof stat.value === 'number' ? stat.value.toLocaleString() : '0'}
+                          {stat.value ? stat.value.toLocaleString() : '0'}
                         </div>
                         <div className="text-sm text-white/60">{stat.label}</div>
                       </motion.div>
@@ -189,13 +189,13 @@ const XWrapped = () => {
                   </div>
 
                   <div className="bg-white/5 p-6 rounded-xl backdrop-blur-sm border border-white/10 mb-8">
-                    <h3 className="text-xl font-semibold text-white mb-4">Kullanıcı Seviyesi</h3>
+                    <h3 className="text-xl font-semibold text-white mb-4">Kullanıcı İstatistikleri</h3>
                     <div className="flex flex-col space-y-2">
                       <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">
-                        {userData.metrics.level}
+                        Günlük {userData.metrics.tweetsPerDay} tweet
                       </div>
                       <div className="text-white/60">
-                        Etkileşim Puanı: {userData.metrics.engagementScore.toLocaleString()}
+                        Etkileşim Oranı: {userData.metrics.engagementRate}
                       </div>
                       <div className="text-sm text-white/40">
                         {Math.floor(userData.accountAge / 365)} yıl {userData.accountAge % 365} gündür X kullanıcısı
