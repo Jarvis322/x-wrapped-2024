@@ -167,10 +167,10 @@ const XWrapped = () => {
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     {[
-                      { value: userData.metrics?.totalTweets || 0, label: t.tweets, icon: '📝' },
-                      { value: userData.metrics?.totalLikes || 0, label: t.likes, icon: '❤️' },
-                      { value: userData.metrics?.totalRetweets || 0, label: t.retweets, icon: '🔄' },
-                      { value: userData.metrics?.totalReplies || 0, label: t.replies, icon: '💬' },
+                      { value: userData.metrics.totalTweets, label: t.tweets, icon: '📝' },
+                      { value: userData.metrics.totalLikes, label: t.likes, icon: '❤️' },
+                      { value: userData.metrics.followers, label: t.followers, icon: '👥' },
+                      { value: userData.metrics.following, label: t.following, icon: '👤' },
                     ].map((stat, index) => (
                       <motion.div
                         key={stat.label}
@@ -188,34 +188,42 @@ const XWrapped = () => {
                     ))}
                   </div>
 
-                  {userData.bestTweet && (
-                    <div className="bg-white/5 p-6 rounded-xl backdrop-blur-sm border border-white/10 mb-8">
-                      <h3 className="text-xl font-semibold text-white mb-4">{t.bestTweet}</h3>
-                      <p className="text-white text-lg mb-4">{userData.bestTweet.content}</p>
-                      <div className="flex space-x-6 text-white/60">
-                        <span>❤️ {userData.bestTweet.likes || 0}</span>
-                        <span>🔄 {userData.bestTweet.retweets || 0}</span>
-                        <span>💬 {userData.bestTweet.replies || 0}</span>
+                  <div className="bg-white/5 p-6 rounded-xl backdrop-blur-sm border border-white/10 mb-8">
+                    <h3 className="text-xl font-semibold text-white mb-4">Kullanıcı Seviyesi</h3>
+                    <div className="flex flex-col space-y-2">
+                      <div className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">
+                        {userData.metrics.level}
+                      </div>
+                      <div className="text-white/60">
+                        Etkileşim Puanı: {userData.metrics.engagementScore.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-white/40">
+                        {Math.floor(userData.accountAge / 365)} yıl {userData.accountAge % 365} gündür X kullanıcısı
                       </div>
                     </div>
-                  )}
+                  </div>
 
-                  {userData.topWords && userData.topWords.length > 0 && (
+                  {userData.description && (
                     <div className="bg-white/5 p-6 rounded-xl backdrop-blur-sm border border-white/10">
-                      <h3 className="text-xl font-semibold text-white mb-4">{t.topWords}</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {userData.topWords.map((word, index) => (
-                          <motion.span
-                            key={word + index}
-                            initial={{ opacity: 0, scale: 0 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ delay: index * 0.1 }}
-                            className="px-4 py-2 bg-white/5 text-white rounded-xl border border-white/10"
-                          >
-                            {word}
-                          </motion.span>
-                        ))}
-                      </div>
+                      <h3 className="text-xl font-semibold text-white mb-4">Hakkında</h3>
+                      <p className="text-white/80">{userData.description}</p>
+                      {userData.location && (
+                        <div className="mt-2 text-white/60 flex items-center">
+                          <span className="mr-2">📍</span>
+                          {userData.location}
+                        </div>
+                      )}
+                      {userData.url && (
+                        <a
+                          href={userData.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 text-blue-400 hover:text-blue-300 flex items-center"
+                        >
+                          <Globe2 className="w-4 h-4 mr-2" />
+                          {userData.url}
+                        </a>
+                      )}
                     </div>
                   )}
                 </CardContent>

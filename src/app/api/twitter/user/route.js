@@ -1,10 +1,6 @@
 import { TwitterApi } from 'twitter-api-v2';
 import { NextResponse } from 'next/server';
 
-// Önbellek sistemi
-const cache = new Map();
-const CACHE_DURATION = 15 * 60 * 1000; // 15 dakika
-
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -12,16 +8,6 @@ export async function GET(request) {
 
     if (!username) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
-    }
-
-    // Önbellekten kontrol et
-    const cachedData = cache.get(username);
-    if (cachedData && Date.now() - cachedData.timestamp < CACHE_DURATION) {
-      return NextResponse.json({
-        ...cachedData.data,
-        _cached: true,
-        _cacheAge: Math.floor((Date.now() - cachedData.timestamp) / 1000)
-      });
     }
 
     const bearerToken = process.env.TWITTER_BEARER_TOKEN;
@@ -33,70 +19,72 @@ export async function GET(request) {
     const client = new TwitterApi(bearerToken);
 
     try {
-      // Kullanıcı bilgilerini al
+      // Tek seferde tüm kullanıcı bilgilerini al
       const user = await client.v2.userByUsername(username, {
-        'user.fields': ['public_metrics', 'description', 'profile_image_url', 'created_at']
+        'user.fields': [
+          'public_metrics',
+          'description',
+          'profile_image_url',
+          'created_at',
+          'verified',
+          'location',
+          'url'
+        ]
       });
 
       if (!user.data) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      // Kullanıcının public metriklerini al
       const publicMetrics = user.data.public_metrics || {};
 
-      // Yanıt objesi oluştur
+      // Kullanıcı verilerinden özet çıkar
+      const tweetCount = publicMetrics.tweet_count || 0;
+      const likeCount = publicMetrics.like_count || 0;
+      const followersCount = publicMetrics.followers_count || 0;
+      const followingCount = publicMetrics.following_count || 0;
+
+      // Kullanıcı seviyesini hesapla
+      const engagementScore = (followersCount * 2) + (likeCount * 0.5) + (tweetCount * 1);
+      let userLevel = 'Yeni Başlayan';
+      
+      if (engagementScore > 100000) userLevel = 'Sosyal Medya Fenomeni';
+      else if (engagementScore > 50000) userLevel = 'İçerik Üreticisi';
+      else if (engagementScore > 10000) userLevel = 'Aktif Kullanıcı';
+      else if (engagementScore > 5000) userLevel = 'Düzenli Kullanıcı';
+
       const response = {
         username: user.data.username,
         name: user.data.name,
         profileImage: user.data.profile_image_url,
         description: user.data.description,
+        verified: user.data.verified || false,
+        location: user.data.location,
+        url: user.data.url,
         metrics: {
-          totalTweets: publicMetrics.tweet_count || 0,
-          totalLikes: publicMetrics.like_count || 0,
-          totalRetweets: 0,
-          totalReplies: 0,
-          followers: publicMetrics.followers_count || 0,
-          following: publicMetrics.following_count || 0
+          totalTweets: tweetCount,
+          totalLikes: likeCount,
+          followers: followersCount,
+          following: followingCount,
+          engagementScore: Math.floor(engagementScore),
+          level: userLevel
         },
-        topWords: ["twitter", "web", "teknoloji", "yazılım", "kod", "geliştirici"],
-        bestTweet: {
-          content: "Rate limit nedeniyle tweet içerikleri gösterilemiyor",
-          likes: 0,
-          retweets: 0,
-          replies: 0,
-          date: new Date().toISOString()
-        }
+        joinDate: user.data.created_at,
+        accountAge: Math.floor((new Date() - new Date(user.data.created_at)) / (1000 * 60 * 60 * 24))
       };
-
-      // Veriyi önbelleğe al
-      cache.set(username, {
-        timestamp: Date.now(),
-        data: response
-      });
 
       return NextResponse.json(response);
 
     } catch (twitterError) {
       console.error('Twitter API Error:', twitterError);
       
-      // Rate limit hatası için önbellekten veri dön
       if (twitterError.code === 429) {
-        const cachedData = cache.get(username);
-        if (cachedData) {
-          return NextResponse.json({
-            ...cachedData.data,
-            _cached: true,
-            _cacheAge: Math.floor((Date.now() - cachedData.timestamp) / 1000)
-          });
-        }
-
         const resetTime = Number(twitterError.rateLimit?.reset) * 1000;
         const waitSeconds = Math.ceil((resetTime - Date.now()) / 1000);
         
         return NextResponse.json({
           error: 'Rate limit exceeded',
-          message: 'Twitter API rate limit reached. Please try again later.',
+          message: 'Çok fazla istek yapıldı. Lütfen birkaç dakika sonra tekrar deneyin.',
           retryAfter: waitSeconds
         }, { 
           status: 429,
@@ -108,7 +96,7 @@ export async function GET(request) {
 
       return NextResponse.json({
         error: 'Twitter API error',
-        message: twitterError.message,
+        message: 'Twitter verilerine erişilemiyor. Lütfen daha sonra tekrar deneyin.',
         code: twitterError.code
       }, { status: 403 });
     }
@@ -117,7 +105,7 @@ export async function GET(request) {
     console.error('Server Error:', error);
     return NextResponse.json({
       error: 'Internal server error',
-      message: error.message
+      message: 'Bir hata oluştu. Lütfen daha sonra tekrar deneyin.'
     }, { status: 500 });
   }
 } 
