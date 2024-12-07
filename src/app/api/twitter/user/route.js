@@ -5,6 +5,13 @@ import { TwitterApi } from 'twitter-api-v2';
 const userCache = new Map();
 const CACHE_DURATION = 15 * 60 * 1000; // 15 dakika
 
+// Rate limit takibi için
+let rateLimitInfo = {
+  remaining: 180, // varsayılan limit
+  reset: Date.now() + CACHE_DURATION,
+  isLimited: false
+};
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -12,6 +19,28 @@ export async function GET(request) {
 
     if (!username) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
+    }
+
+    // Rate limit kontrolü
+    if (rateLimitInfo.isLimited && Date.now() < rateLimitInfo.reset) {
+      console.log('Global rate limit active. Checking cache...');
+      const cachedData = userCache.get(username);
+      if (cachedData) {
+        console.log('Returning cached data due to rate limit for:', username);
+        return NextResponse.json(cachedData.data);
+      }
+
+      const waitMinutes = Math.ceil((rateLimitInfo.reset - Date.now()) / (60 * 1000));
+      return NextResponse.json({
+        error: 'Rate limit exceeded',
+        message: `Twitter API limiti aşıldı. ${waitMinutes} dakika sonra tekrar deneyin.`,
+        retryAfter: waitMinutes * 60
+      }, { 
+        status: 429,
+        headers: {
+          'Retry-After': String(waitMinutes * 60)
+        }
+      });
     }
 
     // Cache'den kontrol et
@@ -44,6 +73,21 @@ export async function GET(request) {
         ]
       });
 
+      // Rate limit bilgisini güncelle
+      const userRateLimit = user.rateLimit;
+      if (userRateLimit) {
+        rateLimitInfo = {
+          remaining: userRateLimit.remaining,
+          reset: userRateLimit.reset * 1000, // Unix timestamp'i milisaniyeye çevir
+          isLimited: userRateLimit.remaining <= 2 // 2 veya daha az istek kaldıysa limit aktif
+        };
+        console.log('Rate limit status:', {
+          remaining: rateLimitInfo.remaining,
+          resetIn: Math.ceil((rateLimitInfo.reset - Date.now()) / (60 * 1000)) + ' minutes',
+          isLimited: rateLimitInfo.isLimited
+        });
+      }
+
       if (!user.data) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
@@ -54,6 +98,17 @@ export async function GET(request) {
         'tweet.fields': ['public_metrics', 'created_at'],
         exclude: ['retweets']
       });
+
+      // Tweet rate limit bilgisini de güncelle
+      const tweetRateLimit = tweets.rateLimit;
+      if (tweetRateLimit && tweetRateLimit.remaining < rateLimitInfo.remaining) {
+        rateLimitInfo = {
+          remaining: tweetRateLimit.remaining,
+          reset: tweetRateLimit.reset * 1000,
+          isLimited: tweetRateLimit.remaining <= 2
+        };
+        console.log('Updated rate limit after tweets:', rateLimitInfo);
+      }
 
       const tweetData = tweets.data?.data || [];
       let totalLikes = 0;
@@ -112,7 +167,11 @@ export async function GET(request) {
         },
         bestTweet,
         joinDate: user.data.created_at,
-        accountAge
+        accountAge,
+        rateLimit: {
+          remaining: rateLimitInfo.remaining,
+          resetIn: Math.ceil((rateLimitInfo.reset - Date.now()) / (60 * 1000))
+        }
       };
 
       // Cache'e kaydet
@@ -127,21 +186,26 @@ export async function GET(request) {
     } catch (twitterError) {
       console.error('Twitter API Error:', twitterError);
       
-      if (twitterError.code === 429) {
-        // Rate limit aşıldığında cache'den veri döndürmeyi dene
+      if (twitterError.code === 429 || (twitterError.data && twitterError.data.status === 429)) {
+        // Rate limit'i güncelle
+        rateLimitInfo.isLimited = true;
+        rateLimitInfo.reset = Date.now() + (15 * 60 * 1000); // 15 dakika ekle
+        
+        // Cache'den veri döndürmeyi dene
         if (cachedData) {
           console.log('Rate limit exceeded, returning cached data for:', username);
           return NextResponse.json(cachedData.data);
         }
 
+        const waitMinutes = Math.ceil((rateLimitInfo.reset - Date.now()) / (60 * 1000));
         return NextResponse.json({
           error: 'Rate limit exceeded',
-          message: 'Çok fazla istek yapıldı. Lütfen birkaç dakika sonra tekrar deneyin.',
-          retryAfter: 900 // 15 dakika
+          message: `Twitter API limiti aşıldı. ${waitMinutes} dakika sonra tekrar deneyin.`,
+          retryAfter: waitMinutes * 60
         }, { 
           status: 429,
           headers: {
-            'Retry-After': '900'
+            'Retry-After': String(waitMinutes * 60)
           }
         });
       }

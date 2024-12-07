@@ -205,6 +205,11 @@ const XWrapped = () => {
                       <div className="text-sm text-white/40">
                         {Math.floor(userData.accountAge / 365)} yıl {userData.accountAge % 365} gündür X kullanıcısı
                       </div>
+                      {userData.rateLimit && (
+                        <div className="text-xs text-white/30 mt-2">
+                          API Limiti: {userData.rateLimit.remaining} istek kaldı ({userData.rateLimit.resetIn} dakika sonra yenilenecek)
+                        </div>
+                      )}
                     </div>
                   </div>
 
