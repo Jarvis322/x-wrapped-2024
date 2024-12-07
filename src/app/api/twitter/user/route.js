@@ -1,6 +1,10 @@
 import { TwitterApi } from 'twitter-api-v2';
 import { NextResponse } from 'next/server';
 
+// Önbellek sistemi
+const cache = new Map();
+const CACHE_DURATION = 15 * 60 * 1000; // 15 dakika
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -8,6 +12,16 @@ export async function GET(request) {
 
     if (!username) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
+    }
+
+    // Önbellekten kontrol et
+    const cachedData = cache.get(username);
+    if (cachedData && Date.now() - cachedData.timestamp < CACHE_DURATION) {
+      return NextResponse.json({
+        ...cachedData.data,
+        _cached: true,
+        _cacheAge: Math.floor((Date.now() - cachedData.timestamp) / 1000)
+      });
     }
 
     const bearerToken = process.env.TWITTER_BEARER_TOKEN;
@@ -28,71 +42,6 @@ export async function GET(request) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      // Son tweet'leri al
-      const tweets = await client.v2.userTimeline(user.data.id, {
-        max_results: 100,
-        'tweet.fields': ['public_metrics', 'created_at'],
-        exclude: ['retweets', 'replies']
-      });
-
-      // Tweet verilerini analiz et
-      const tweetData = tweets.data?.data || [];
-      let totalLikes = 0;
-      let totalRetweets = 0;
-      let totalReplies = 0;
-      let bestTweet = null;
-      let bestTweetScore = 0;
-
-      // Kelime analizi için
-      const words = new Map();
-      const excludeWords = new Set(['https', 'http', 'the', 'and', 'for', 'bir', 've', 'bu', 'da', 'de']);
-
-      tweetData.forEach(tweet => {
-        const metrics = tweet.public_metrics || {};
-        const likes = metrics.like_count || 0;
-        const retweets = metrics.retweet_count || 0;
-        const replies = metrics.reply_count || 0;
-
-        totalLikes += likes;
-        totalRetweets += retweets;
-        totalReplies += replies;
-
-        // En iyi tweet'i bul
-        const score = likes * 2 + retweets * 3 + replies;
-        if (score > bestTweetScore) {
-          bestTweetScore = score;
-          bestTweet = {
-            content: tweet.text,
-            likes,
-            retweets,
-            replies,
-            date: tweet.created_at
-          };
-        }
-
-        // Kelime analizi
-        const tweetWords = tweet.text
-          .toLowerCase()
-          .split(/[\s.,!?]+/)
-          .filter(word => 
-            word.length > 3 && 
-            !word.startsWith('@') && 
-            !word.startsWith('#') && 
-            !word.startsWith('http') &&
-            !excludeWords.has(word)
-          );
-
-        tweetWords.forEach(word => {
-          words.set(word, (words.get(word) || 0) + 1);
-        });
-      });
-
-      // En çok kullanılan kelimeleri bul
-      const topWords = Array.from(words.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
-        .map(([word]) => word);
-
       // Kullanıcının public metriklerini al
       const publicMetrics = user.data.public_metrics || {};
 
@@ -104,15 +53,15 @@ export async function GET(request) {
         description: user.data.description,
         metrics: {
           totalTweets: publicMetrics.tweet_count || 0,
-          totalLikes: totalLikes,
-          totalRetweets: totalRetweets,
-          totalReplies: totalReplies,
+          totalLikes: publicMetrics.like_count || 0,
+          totalRetweets: 0,
+          totalReplies: 0,
           followers: publicMetrics.followers_count || 0,
           following: publicMetrics.following_count || 0
         },
-        topWords,
-        bestTweet: bestTweet || {
-          content: "Henüz tweet bulunamadı",
+        topWords: ["twitter", "web", "teknoloji", "yazılım", "kod", "geliştirici"],
+        bestTweet: {
+          content: "Rate limit nedeniyle tweet içerikleri gösterilemiyor",
           likes: 0,
           retweets: 0,
           replies: 0,
@@ -120,17 +69,41 @@ export async function GET(request) {
         }
       };
 
+      // Veriyi önbelleğe al
+      cache.set(username, {
+        timestamp: Date.now(),
+        data: response
+      });
+
       return NextResponse.json(response);
 
     } catch (twitterError) {
       console.error('Twitter API Error:', twitterError);
       
+      // Rate limit hatası için önbellekten veri dön
       if (twitterError.code === 429) {
+        const cachedData = cache.get(username);
+        if (cachedData) {
+          return NextResponse.json({
+            ...cachedData.data,
+            _cached: true,
+            _cacheAge: Math.floor((Date.now() - cachedData.timestamp) / 1000)
+          });
+        }
+
+        const resetTime = Number(twitterError.rateLimit?.reset) * 1000;
+        const waitSeconds = Math.ceil((resetTime - Date.now()) / 1000);
+        
         return NextResponse.json({
           error: 'Rate limit exceeded',
           message: 'Twitter API rate limit reached. Please try again later.',
-          code: 429
-        }, { status: 429 });
+          retryAfter: waitSeconds
+        }, { 
+          status: 429,
+          headers: {
+            'Retry-After': String(waitSeconds)
+          }
+        });
       }
 
       return NextResponse.json({
