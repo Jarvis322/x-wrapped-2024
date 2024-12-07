@@ -167,10 +167,10 @@ const XWrapped = () => {
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                     {[
-                      { value: userData.metrics.totalTweets, label: t.tweets, icon: '📝' },
-                      { value: userData.metrics.totalLikes, label: t.likes, icon: '❤️' },
-                      { value: userData.metrics.totalRetweets, label: t.retweets, icon: '🔄' },
-                      { value: userData.metrics.totalReplies, label: t.replies, icon: '💬' },
+                      { value: userData.metrics?.totalTweets || 0, label: t.tweets, icon: '📝' },
+                      { value: userData.metrics?.totalLikes || 0, label: t.likes, icon: '❤️' },
+                      { value: userData.metrics?.totalRetweets || 0, label: t.retweets, icon: '🔄' },
+                      { value: userData.metrics?.totalReplies || 0, label: t.replies, icon: '💬' },
                     ].map((stat, index) => (
                       <motion.div
                         key={stat.label}
@@ -180,7 +180,9 @@ const XWrapped = () => {
                         className="bg-white/5 p-4 rounded-xl backdrop-blur-sm border border-white/10"
                       >
                         <div className="text-2xl mb-2">{stat.icon}</div>
-                        <div className="text-xl font-bold text-white">{stat.value.toLocaleString()}</div>
+                        <div className="text-xl font-bold text-white">
+                          {typeof stat.value === 'number' ? stat.value.toLocaleString() : '0'}
+                        </div>
                         <div className="text-sm text-white/60">{stat.label}</div>
                       </motion.div>
                     ))}
@@ -191,9 +193,9 @@ const XWrapped = () => {
                       <h3 className="text-xl font-semibold text-white mb-4">{t.bestTweet}</h3>
                       <p className="text-white text-lg mb-4">{userData.bestTweet.content}</p>
                       <div className="flex space-x-6 text-white/60">
-                        <span>❤️ {userData.bestTweet.likes}</span>
-                        <span>🔄 {userData.bestTweet.retweets}</span>
-                        <span>💬 {userData.bestTweet.replies}</span>
+                        <span>❤️ {userData.bestTweet.likes || 0}</span>
+                        <span>🔄 {userData.bestTweet.retweets || 0}</span>
+                        <span>💬 {userData.bestTweet.replies || 0}</span>
                       </div>
                     </div>
                   )}
@@ -204,7 +206,7 @@ const XWrapped = () => {
                       <div className="flex flex-wrap gap-2">
                         {userData.topWords.map((word, index) => (
                           <motion.span
-                            key={word}
+                            key={word + index}
                             initial={{ opacity: 0, scale: 0 }}
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: index * 0.1 }}
