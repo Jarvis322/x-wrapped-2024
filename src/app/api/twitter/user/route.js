@@ -1,5 +1,9 @@
-import { TwitterApi } from 'twitter-api-v2';
 import { NextResponse } from 'next/server';
+import { TwitterApi } from 'twitter-api-v2';
+
+// In-memory cache objesi
+const userCache = new Map();
+const CACHE_DURATION = 15 * 60 * 1000; // 15 dakika
 
 export async function GET(request) {
   try {
@@ -8,6 +12,13 @@ export async function GET(request) {
 
     if (!username) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
+    }
+
+    // Cache'den kontrol et
+    const cachedData = userCache.get(username);
+    if (cachedData && Date.now() - cachedData.timestamp < CACHE_DURATION) {
+      console.log('Returning cached data for:', username);
+      return NextResponse.json(cachedData.data);
     }
 
     const bearerToken = process.env.TWITTER_BEARER_TOKEN?.trim();
@@ -81,7 +92,7 @@ export async function GET(request) {
       const engagementRate = publicMetrics.tweet_count > 0 ? 
         ((totalLikes + totalRetweets + totalReplies) / publicMetrics.tweet_count).toFixed(2) : 0;
 
-      const response = {
+      const responseData = {
         username: user.data.username,
         name: user.data.name,
         profileImage: user.data.profile_image_url,
@@ -104,23 +115,33 @@ export async function GET(request) {
         accountAge
       };
 
-      return NextResponse.json(response);
+      // Cache'e kaydet
+      userCache.set(username, {
+        data: responseData,
+        timestamp: Date.now()
+      });
+
+      console.log('Cached new data for:', username);
+      return NextResponse.json(responseData);
 
     } catch (twitterError) {
       console.error('Twitter API Error:', twitterError);
       
       if (twitterError.code === 429) {
-        const resetTime = Number(twitterError.rateLimit?.reset) * 1000;
-        const waitSeconds = Math.ceil((resetTime - Date.now()) / 1000);
-        
+        // Rate limit aşıldığında cache'den veri döndürmeyi dene
+        if (cachedData) {
+          console.log('Rate limit exceeded, returning cached data for:', username);
+          return NextResponse.json(cachedData.data);
+        }
+
         return NextResponse.json({
           error: 'Rate limit exceeded',
           message: 'Çok fazla istek yapıldı. Lütfen birkaç dakika sonra tekrar deneyin.',
-          retryAfter: waitSeconds
+          retryAfter: 900 // 15 dakika
         }, { 
           status: 429,
           headers: {
-            'Retry-After': String(waitSeconds)
+            'Retry-After': '900'
           }
         });
       }

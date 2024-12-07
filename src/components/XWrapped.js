@@ -45,13 +45,18 @@ const XWrapped = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || t.errorFetching);
+        if (response.status === 429) {
+          // Rate limit hatası
+          setError(data.message || 'Çok fazla istek yapıldı. Lütfen birkaç dakika sonra tekrar deneyin.');
+          return;
+        }
+        throw new Error(data.message || 'Twitter verilerine erişilemiyor');
       }
 
       setUserData(data);
     } catch (error) {
       console.error('Error:', error);
-      setError(t.errorFetching);
+      setError(error.message);
     } finally {
       setIsLoading(false);
     }
