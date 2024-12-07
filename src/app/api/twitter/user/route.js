@@ -10,17 +10,18 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
     }
 
-    const bearerToken = process.env.TWITTER_BEARER_TOKEN;
+    const bearerToken = process.env.TWITTER_BEARER_TOKEN?.trim();
     if (!bearerToken) {
       console.error('TWITTER_BEARER_TOKEN is missing');
       return NextResponse.json({ error: 'Twitter configuration is missing' }, { status: 500 });
     }
 
     const client = new TwitterApi(bearerToken);
+    const v2Client = client.v2;
 
     try {
-      // Tek seferde tüm kullanıcı bilgilerini al
-      const user = await client.v2.userByUsername(username, {
+      // Kullanıcı bilgilerini al
+      const user = await v2Client.userByUsername(username, {
         'user.fields': [
           'public_metrics',
           'description',
@@ -36,22 +37,49 @@ export async function GET(request) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
+      // Kullanıcının tweet'lerini al
+      const tweets = await v2Client.userTimeline(user.data.id, {
+        max_results: 10,
+        'tweet.fields': ['public_metrics', 'created_at'],
+        exclude: ['retweets']
+      });
+
+      const tweetData = tweets.data?.data || [];
+      let totalLikes = 0;
+      let totalRetweets = 0;
+      let totalReplies = 0;
+      let bestTweet = null;
+      let bestTweetScore = 0;
+
+      // Tweet'leri analiz et
+      tweetData.forEach(tweet => {
+        const metrics = tweet.public_metrics || {};
+        const likes = metrics.like_count || 0;
+        const retweets = metrics.retweet_count || 0;
+        const replies = metrics.reply_count || 0;
+
+        totalLikes += likes;
+        totalRetweets += retweets;
+        totalReplies += replies;
+
+        const score = likes + (retweets * 2) + replies;
+        if (score > bestTweetScore) {
+          bestTweetScore = score;
+          bestTweet = {
+            content: tweet.text,
+            likes,
+            retweets,
+            replies,
+            date: tweet.created_at
+          };
+        }
+      });
+
       const publicMetrics = user.data.public_metrics || {};
-
-      // Kullanıcı verilerinden özet çıkar
-      const tweetCount = publicMetrics.tweet_count || 0;
-      const likeCount = publicMetrics.like_count || 0;
-      const followersCount = publicMetrics.followers_count || 0;
-      const followingCount = publicMetrics.following_count || 0;
-
-      // Kullanıcı seviyesini hesapla
-      const engagementScore = (followersCount * 2) + (likeCount * 0.5) + (tweetCount * 1);
-      let userLevel = 'Yeni Başlayan';
-      
-      if (engagementScore > 100000) userLevel = 'Sosyal Medya Fenomeni';
-      else if (engagementScore > 50000) userLevel = 'İçerik Üreticisi';
-      else if (engagementScore > 10000) userLevel = 'Aktif Kullanıcı';
-      else if (engagementScore > 5000) userLevel = 'Düzenli Kullanıcı';
+      const accountAge = Math.floor((new Date() - new Date(user.data.created_at)) / (1000 * 60 * 60 * 24));
+      const tweetsPerDay = accountAge > 0 ? (publicMetrics.tweet_count / accountAge).toFixed(2) : 0;
+      const engagementRate = publicMetrics.tweet_count > 0 ? 
+        ((totalLikes + totalRetweets + totalReplies) / publicMetrics.tweet_count).toFixed(2) : 0;
 
       const response = {
         username: user.data.username,
@@ -62,15 +90,18 @@ export async function GET(request) {
         location: user.data.location,
         url: user.data.url,
         metrics: {
-          totalTweets: tweetCount,
-          totalLikes: likeCount,
-          followers: followersCount,
-          following: followingCount,
-          engagementScore: Math.floor(engagementScore),
-          level: userLevel
+          totalTweets: publicMetrics.tweet_count || 0,
+          totalLikes,
+          totalRetweets,
+          totalReplies,
+          followers: publicMetrics.followers_count || 0,
+          following: publicMetrics.following_count || 0,
+          tweetsPerDay: Number(tweetsPerDay),
+          engagementRate: Number(engagementRate)
         },
+        bestTweet,
         joinDate: user.data.created_at,
-        accountAge: Math.floor((new Date() - new Date(user.data.created_at)) / (1000 * 60 * 60 * 24))
+        accountAge
       };
 
       return NextResponse.json(response);
