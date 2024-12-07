@@ -124,27 +124,15 @@ const XWrapped = () => {
     setIsLoading(true);
     setError('');
     try {
-      // Örnek veri
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      const dummyData = {
-        username: username,
-        totalTweets: 1248,
-        totalLikes: 8750,
-        totalRetweets: 520,
-        totalReplies: 392,
-        topWords: ["yapay zeka", "teknoloji", "yazılım", "blockchain", "web3", "metaverse"],
-        topEmojis: ["🚀", "💡", "✨", "💻", "🎯", "🌟"],
-        bestTweet: {
-          content: "2024'te yapay zeka alanında çığır açan gelişmeler yaşanacak! GPT-5 ile neler yapabileceğimizi hayal bile edemiyorum. Teknoloji çok hızlı ilerliyor! 🚀 #YapayZeka #Teknoloji",
-          likes: 1243,
-          retweets: 445,
-          replies: 128,
-          date: "2024-03-15"
-        }
-      };
+      const response = await fetch(`/api/twitter/user?username=${username}`);
+      const data = await response.json();
 
-      const scoreData = calculateScore(dummyData);
-      setUserData({ ...dummyData, ...scoreData });
+      if (!response.ok) {
+        throw new Error(data.error || t.errorFetching);
+      }
+
+      const scoreData = calculateScore(data);
+      setUserData({ ...data, ...scoreData });
     } catch (error) {
       console.error('Error:', error);
       setError(t.errorFetching);
@@ -160,7 +148,7 @@ const XWrapped = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[conic-gradient(at_top,_var(--tw-gradient-stops))] from-blue-900 via-black to-purple-900 px-4 py-8 md:py-12 transition-all duration-500">
+    <div className="min-h-screen bg-[conic-gradient(at_top,_var(--tw-gradient-stops))] from-blue-900 via-black to-purple-900 px-4 py-8 md:py-12 transition-all duration-500 relative">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -375,6 +363,27 @@ const XWrapped = () => {
           )}
         </AnimatePresence>
       </motion.div>
+
+      {/* Footer */}
+      <footer className="absolute bottom-0 left-0 right-0 p-4 text-center text-white/60">
+        <div className="max-w-2xl mx-auto flex flex-col md:flex-row items-center justify-between space-y-2 md:space-y-0">
+          <div className="text-sm">
+            © 2024 X Wrapped. All rights reserved.
+          </div>
+          <div className="text-sm flex items-center space-x-2">
+            <span>Developed by</span>
+            <a 
+              href="https://x.com/yigitech" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 transition-colors flex items-center space-x-1"
+            >
+              <Twitter className="w-4 h-4" />
+              <span>@yigitech</span>
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };
