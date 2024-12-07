@@ -1,17 +1,16 @@
-import { Inter } from 'next/font/google'
 import './globals.css'
-
-const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
   title: 'X Wrapped 2024',
-  description: 'Your X (Twitter) year in review',
+  description: 'Your Twitter Year in Review',
 }
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className="min-h-screen bg-gradient-to-b from-blue-900 via-black to-purple-900">
+        {children}
+      </body>
     </html>
   )
 }

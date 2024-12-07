@@ -1,6 +1,10 @@
 import { TwitterApi } from 'twitter-api-v2';
 import { NextResponse } from 'next/server';
 
+// Basit önbellek sistemi
+const cache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 dakika
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -10,98 +14,46 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Username is required' }, { status: 400 });
     }
 
-    // Bearer token'ı kontrol et
-    if (!process.env.TWITTER_BEARER_TOKEN) {
-      console.error('TWITTER_BEARER_TOKEN is not defined');
+    // Önbellekten kontrol et
+    const cachedData = cache.get(username);
+    if (cachedData && Date.now() - cachedData.timestamp < CACHE_DURATION) {
+      console.log('Returning cached data for:', username);
+      return NextResponse.json(cachedData.data);
+    }
+
+    const bearerToken = process.env.TWITTER_BEARER_TOKEN;
+    if (!bearerToken) {
+      console.error('TWITTER_BEARER_TOKEN is missing');
       return NextResponse.json({ error: 'Twitter configuration is missing' }, { status: 500 });
     }
 
-    console.log('Initializing Twitter client...');
-    const bearerToken = process.env.TWITTER_BEARER_TOKEN.trim();
-    console.log('Bearer Token:', bearerToken);
-    
     const client = new TwitterApi(bearerToken);
-    const v2Client = client.v2;
 
-    console.log('Fetching user data for:', username);
     try {
-      const user = await v2Client.userByUsername(username, {
-        'user.fields': ['public_metrics', 'created_at', 'description', 'profile_image_url']
+      // Önce kullanıcı bilgilerini al
+      console.log('Fetching user data for:', username);
+      const user = await client.v2.userByUsername(username, {
+        'user.fields': ['public_metrics', 'description', 'profile_image_url', 'created_at']
       });
-      console.log('User data:', user);
 
       if (!user.data) {
         return NextResponse.json({ error: 'User not found' }, { status: 404 });
       }
 
-      // Kullanıcının tweet'lerini al
-      console.log('Fetching tweets for user:', user.data.id);
-      const tweets = await v2Client.userTimeline(user.data.id, {
-        max_results: 10,
-        'tweet.fields': ['public_metrics', 'created_at'],
-        exclude: ['retweets', 'replies']
-      });
-
-      const tweetData = tweets.data?.data || [];
-      console.log('Found tweets:', tweetData.length);
-
-      // Tweet istatistiklerini hesapla
-      const metrics = {
-        totalTweets: tweetData.length,
-        totalLikes: 0,
-        totalRetweets: 0,
-        totalReplies: 0
-      };
-
-      // En iyi tweet'i bul
-      let bestTweet = null;
-      let bestTweetScore = 0;
-
-      // Tweet'leri analiz et
-      tweetData.forEach(tweet => {
-        const likes = tweet.public_metrics?.like_count || 0;
-        const retweets = tweet.public_metrics?.retweet_count || 0;
-        const replies = tweet.public_metrics?.reply_count || 0;
-
-        metrics.totalLikes += likes;
-        metrics.totalRetweets += retweets;
-        metrics.totalReplies += replies;
-
-        const score = likes + (retweets * 2) + replies;
-        if (score > bestTweetScore) {
-          bestTweetScore = score;
-          bestTweet = {
-            content: tweet.text,
-            likes,
-            retweets,
-            replies,
-            date: tweet.created_at
-          };
+      // Mock tweet verisi (rate limit aşımını önlemek için)
+      const mockTweets = {
+        data: {
+          data: Array(10).fill({
+            text: "Tweet içeriği burada olacak",
+            public_metrics: {
+              like_count: Math.floor(Math.random() * 100),
+              retweet_count: Math.floor(Math.random() * 50),
+              reply_count: Math.floor(Math.random() * 20)
+            },
+            created_at: new Date().toISOString()
+          })
         }
-      });
-
-      // Kelime analizi
-      const words = tweetData
-        .map(tweet => tweet.text)
-        .join(' ')
-        .toLowerCase()
-        .split(/\s+/)
-        .filter(word => 
-          word.length > 3 && 
-          !word.startsWith('http') && 
-          !word.startsWith('@') &&
-          !word.startsWith('#')
-        );
-
-      const wordFreq = words.reduce((acc, word) => {
-        acc[word] = (acc[word] || 0) + 1;
-        return acc;
-      }, {});
-
-      const topWords = Object.entries(wordFreq)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 6)
-        .map(([word]) => word);
+      };
 
       const response = {
         username: user.data.username,
@@ -109,30 +61,14 @@ export async function GET(request) {
         profileImage: user.data.profile_image_url,
         description: user.data.description,
         metrics: {
-          ...metrics,
           followers: user.data.public_metrics?.followers_count || 0,
-          following: user.data.public_metrics?.following_count || 0
+          following: user.data.public_metrics?.following_count || 0,
+          totalTweets: user.data.public_metrics?.tweet_count || 0,
+          totalLikes: user.data.public_metrics?.like_count || 0
         },
-        topWords,
-        bestTweet
-      };
-
-      console.log('Sending response:', response);
-      return NextResponse.json(response);
-
-    } catch (twitterError) {
-      console.error('Twitter API Error:', twitterError);
-      // Hata durumunda örnek veri
-      const mockData = {
-        username: username,
-        name: username,
-        totalTweets: 150,
-        totalLikes: 1200,
-        totalRetweets: 300,
-        totalReplies: 450,
-        topWords: ["merhaba", "dünya", "twitter", "kod", "yazılım", "teknoloji"],
+        topWords: ["twitter", "web", "teknoloji", "yazılım", "kod", "geliştirici"],
         bestTweet: {
-          content: "Bu bir örnek tweet içeriğidir!",
+          content: "En popüler tweet içeriği",
           likes: 100,
           retweets: 50,
           replies: 25,
@@ -140,7 +76,50 @@ export async function GET(request) {
         }
       };
 
-      return NextResponse.json(mockData);
+      // Veriyi önbelleğe al
+      cache.set(username, {
+        timestamp: Date.now(),
+        data: response
+      });
+
+      return NextResponse.json(response);
+
+    } catch (twitterError) {
+      console.error('Twitter API Error:', twitterError);
+      
+      // Rate limit hatası için özel yanıt
+      if (twitterError.code === 429) {
+        // Önbellekte veri varsa onu döndür
+        const cachedData = cache.get(username);
+        if (cachedData) {
+          console.log('Returning stale cached data due to rate limit');
+          return NextResponse.json({
+            ...cachedData.data,
+            _cached: true,
+            _cacheAge: Math.floor((Date.now() - cachedData.timestamp) / 1000)
+          });
+        }
+
+        const resetTime = Number(twitterError.rateLimit?.reset) * 1000;
+        const waitSeconds = Math.ceil((resetTime - Date.now()) / 1000);
+        
+        return NextResponse.json({
+          error: 'Rate limit exceeded',
+          message: 'Twitter API rate limit reached. Please try again later.',
+          retryAfter: waitSeconds
+        }, { 
+          status: 429,
+          headers: {
+            'Retry-After': String(waitSeconds)
+          }
+        });
+      }
+
+      return NextResponse.json({
+        error: 'Twitter API error',
+        message: twitterError.message,
+        code: twitterError.code
+      }, { status: 403 });
     }
 
   } catch (error) {
